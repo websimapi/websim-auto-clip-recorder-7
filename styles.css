@@ -132,13 +132,34 @@ button:disabled{opacity:.5;cursor:not-allowed}
   max-height: 90vh;
   display: flex;
   flex-direction: column;
+  width: 800px;
 }
 #modal-video {
   max-width: 100%;
-  max-height: calc(90vh - 100px);
+  max-height: calc(90vh - 150px);
   border-radius: 8px;
+  background: #000;
+}
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 12px;
+  margin-top: 15px;
+}
+#editor-status {
+  margin-right: auto;
+  font-size: 0.9rem;
+  color: var(--muted);
 }
 #modal-close {
-  margin-top: 15px;
+  margin-top: 0;
   align-self: flex-end;
+}
+.edit-controls p {
+  font-size: 0.85rem;
+  color: var(--muted);
+  margin: 0 0 10px;
+  width: 100%;
+  text-align: center;
 }

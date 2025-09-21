@@ -20,6 +20,8 @@ const els = {
   modalVideo: document.getElementById('modal-video'),
   modalClose: document.getElementById('modal-close'),
   outroGrid: document.getElementById('outro-audio-grid'),
+  editorStatus: document.getElementById('editor-status'),
+  clipBoundsInfo: document.getElementById('clip-bounds-info'),
 };
 
 let clips = [];
@@ -107,27 +109,85 @@ els.modalClose.addEventListener('click', ()=>{
   els.modalVideo.pause(); 
   els.modalVideo.src=''; 
   document.querySelectorAll('.edit-controls button').forEach(b=>b.onclick=null); 
+  currentEditorClip = null;
+  editorPromise = Promise.resolve();
 });
 
 els.modalBackdrop.addEventListener('click',(e)=>{ if(e.target===els.modalBackdrop) els.modalClose.click(); });
 
+let currentEditorClip = null;
+let editorPromise = Promise.resolve();
+
 function setupEditor(clip){
-  const applyRange = async (newStart,newEnd)=>{
-    clip.composing=true; renderClips();
-    try{
-      const bounds = recorder.getBounds(clip);
-      clip.startIdx = Math.max(bounds.minStartIdx, Math.min(newStart, clip.endIdx-1));
-      clip.endIdx = Math.min(bounds.maxEndIdx, Math.max(newEnd, clip.startIdx+1));
-      const blob = await recorder.recomposeRange({ sessionId:clip.sessionId, startIdx:clip.startIdx, endIdx:clip.endIdx });
-      clip.blob = blob; clip.duration = await getVideoDuration(blob);
-      els.modalVideo.src = URL.createObjectURL(blob); els.modalVideo.play().catch(()=>{});
-    } finally { clip.composing=false; renderClips(); saveClips(clips); }
+  currentEditorClip = clip;
+  const bounds = recorder.getBounds(clip);
+  els.clipBoundsInfo.textContent = `~${bounds.minStartIdx}s to ~${bounds.maxEndIdx}s`;
+  els.editorStatus.textContent = '';
+  
+  const applyRange = (newStart, newEnd) => {
+    editorPromise = editorPromise.then(async () => {
+      if (clip !== currentEditorClip) return; // Another clip is being edited.
+      
+      els.editorStatus.textContent = 'Re-composing clip...';
+      try {
+        const currentBounds = recorder.getBounds(clip);
+        const nextStart = Math.max(currentBounds.minStartIdx, Math.min(newStart, clip.endIdx - 1));
+        const nextEnd = Math.min(currentBounds.maxEndIdx, Math.max(newEnd, clip.startIdx + 1));
+
+        if (nextStart === clip.startIdx && nextEnd === clip.endIdx) {
+            els.editorStatus.textContent = 'No change in boundaries.';
+            setTimeout(() => { if (clip === currentEditorClip) els.editorStatus.textContent = ''; }, 2000);
+            return;
+        }
+
+        clip.startIdx = nextStart;
+        clip.endIdx = nextEnd;
+
+        const blob = await recorder.recomposeRange({ sessionId: clip.sessionId, startIdx: clip.startIdx, endIdx: clip.endIdx });
+        
+        if (clip !== currentEditorClip) return; // Editor was closed or changed while composing.
+
+        if (blob) {
+            clip.rawBlob = blob; // The raw, re-composed clip
+            
+            // Now compose with outro
+            const { composeClips } = await import("./composer.js");
+            const outro = getSelectedOutro();
+            const composedBlob = await composeClips([blob], { outroSeconds:3, logoUrl:"/logowhite.png", outroAudio:outro.file, outroAudioRegion:outro.region, width:1280, height:720, fps:30 });
+
+            clip.blob = composedBlob;
+            clip.duration = await getVideoDuration(composedBlob);
+            clip.thumb = await makeThumb(composedBlob);
+            
+            if (clip === currentEditorClip) { // Check again after async operations
+              const newUrl = URL.createObjectURL(composedBlob);
+              const oldUrl = els.modalVideo.src;
+              els.modalVideo.src = newUrl;
+              els.modalVideo.play().catch(() => {});
+              if (oldUrl) URL.revokeObjectURL(oldUrl);
+              els.editorStatus.textContent = 'Clip updated.';
+            }
+        } else {
+            els.editorStatus.textContent = 'Update failed: no video data.';
+        }
+      } catch (e) {
+        console.error("Error during recompose:", e);
+        if (clip === currentEditorClip) els.editorStatus.textContent = 'Error updating clip.';
+      } finally {
+        if (clip === currentEditorClip) {
+          setTimeout(() => { if (clip === currentEditorClip) els.editorStatus.textContent = ''; }, 2000);
+        }
+        renderClips(); 
+        saveClips(clips);
+      }
+    });
   };
-  const step=1;
-  document.getElementById('btn-ext-start').onclick=()=>applyRange(clip.startIdx-step, clip.endIdx);
-  document.getElementById('btn-trim-start').onclick=()=>applyRange(clip.startIdx+step, clip.endIdx);
-  document.getElementById('btn-trim-end').onclick=()=>applyRange(clip.startIdx, clip.endIdx-step);
-  document.getElementById('btn-ext-end').onclick=()=>applyRange(clip.startIdx, clip.endIdx+step);
+
+  const step = 1; // Corresponds roughly to 1 second as timeslice is 1000ms
+  document.getElementById('btn-ext-start').onclick = () => applyRange(clip.startIdx - step, clip.endIdx);
+  document.getElementById('btn-trim-start').onclick = () => applyRange(clip.startIdx + step, clip.endIdx);
+  document.getElementById('btn-trim-end').onclick = () => applyRange(clip.startIdx, clip.endIdx - step);
+  document.getElementById('btn-ext-end').onclick = () => applyRange(clip.startIdx, clip.endIdx + step);
 }
 
 setupNavigator();

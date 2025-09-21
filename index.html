@@ -51,25 +51,29 @@
       <div id="clips-grid" class="grid"></div>
     </section>
 
-    <section class="panel">
-      <h2>Outro Audio</h2>
-      <p class="hint">Select which "Hey Websim" sound to add to the end of each auto-composed clip. Click and drag on a waveform to select a region.</p>
-      <div id="outro-audio-grid" class="grid audio-grid"></div>
-    </section>
-
     <div class="modal-backdrop" id="modal-backdrop" style="display: none;">
       <div class="modal">
-        <h3>Preview Clip</h3>
+        <h3>Edit Clip</h3>
         <video id="modal-video" controls playsinline></video>
         <div class="edit-controls">
+          <p>Adjust clip boundaries. Available recording buffer: <span id="clip-bounds-info">...</span></p>
           <button id="btn-ext-start">Extend Start -1s</button>
           <button id="btn-trim-start">Trim Start +1s</button>
           <button id="btn-trim-end">Trim End -1s</button>
           <button id="btn-ext-end">Extend End +1s</button>
         </div>
-        <button id="modal-close">Close</button>
+        <div class="modal-actions">
+          <span id="editor-status"></span>
+          <button id="modal-close">Close</button>
+        </div>
       </div>
     </div>
+
+    <section class="panel">
+      <h2>Outro Audio</h2>
+      <p class="hint">Select which "Hey Websim" sound to add to the end of each auto-composed clip. Click and drag on a waveform to select a region.</p>
+      <div id="outro-audio-grid" class="grid audio-grid"></div>
+    </section>
 
     <section class="panel">
       <h2>Compose</h2>
