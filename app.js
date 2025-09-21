@@ -1,5 +1,3 @@
-
-```javascript
 /* ...existing code... */
 import { saveClips, loadClips } from './storage.js';
 import { initOutroSelector, getSelectedOutro } from './outroSelector.js';

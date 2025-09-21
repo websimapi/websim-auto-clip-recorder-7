@@ -1,6 +1,7 @@
 export function createRecorder({ onNewRawClip, autoSplitOnCaptured, onIframeNavSplit }){
   let captureStream=null, recorder=null, recording=false, timeslice=1000;
   let segments=[], sessionId=Date.now(), clipStartIdx=0, splitIndices=[];
+  let splitQueue = Promise.resolve(), lastSplitAt = 0;
   let heur={ interval:null, videoEl:null, canvas:null, ctx:null };
 
   async function pickTab(){
@@ -22,14 +23,25 @@ export function createRecorder({ onNewRawClip, autoSplitOnCaptured, onIframeNavS
   function start(){
     if(!captureStream){ alert("Pick a tab first."); return; }
     if(recording) return;
-    setupRecorder(); recording=true; currentClipStart=Date.now(); recorder.start(timeslice);
+    setupRecorder(); recording=true; recorder.start(timeslice);
     document.getElementById("btn-start").disabled=true;
     document.getElementById("btn-stop").disabled=false;
     document.getElementById("btn-split").disabled=false;
     if(autoSplitOnCaptured()) startHeuristics();
   }
 
-  function split(){ if(!recording) return; const endIdx=segments.length; splitIndices.push(endIdx); emitClip(clipStartIdx,endIdx); clipStartIdx=endIdx; }
+  function split(){
+    if(!recording) return;
+    const now = Date.now();
+    if (now - lastSplitAt < 600) return; // debounce rapid splits
+    lastSplitAt = now;
+    const endIdx = segments.length;
+    if (endIdx <= clipStartIdx) return; // nothing new
+    splitIndices.push(endIdx);
+    const s = clipStartIdx, e = endIdx;
+    clipStartIdx = endIdx;
+    splitQueue = splitQueue.then(()=>emitClip(s,e)).catch(()=>{});
+  }
 
   async function emitClip(sIdx,eIdx){
     const blobs=segments.slice(sIdx,eIdx).map(s=>s.blob);
@@ -37,9 +49,28 @@ export function createRecorder({ onNewRawClip, autoSplitOnCaptured, onIframeNavS
     const composed = await concatenateClips(blobs,{ width:1280, height:720, fps:30 });
     await onNewRawClip(composed, { sessionId, startIdx:sIdx, endIdx:eIdx });
   }
+  
+  async function recomposeRange({ sessionId: sid, startIdx, endIdx }) {
+    if (sid !== sessionId) throw new Error('Session not available for recompose');
+    const s = Math.max(0, Math.min(startIdx, segments.length-1));
+    const e = Math.max(s+1, Math.min(endIdx, segments.length));
+    const blobs = segments.slice(s, e).map(s=>s.blob);
+    const { concatenateClips } = await import('./composer.js');
+    return concatenateClips(blobs, { width:1280, height:720, fps:30 });
+  }
+  function getBounds(s){ return { minStartIdx: 0, maxEndIdx: segments.length }; }
 
   function stop(){
-    if(recorder && recording){ recording=false; recorder.stop(); }
+    if(recorder && recording){
+      recording=false;
+      // emit trailing clip if any
+      if (segments.length > clipStartIdx) {
+        const s = clipStartIdx, e = segments.length;
+        clipStartIdx = e;
+        splitQueue = splitQueue.then(()=>emitClip(s,e)).catch(()=>{});
+      }
+      recorder.stop();
+    }
     if(captureStream){ captureStream.getTracks().forEach(t=>t.stop()); captureStream=null; }
     document.getElementById("btn-start").disabled=!captureStream;
     document.getElementById("btn-stop").disabled=true;
